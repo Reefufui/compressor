@@ -5,8 +5,8 @@
 #include "ari.h"
 
 typedef struct {
-    char ch;
     uint32_t count;
+    char ch;
 } Table;
 
 Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr, int *len)
@@ -19,8 +19,10 @@ Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr, int *len)
         if( feof(*inputFilePtr) ) { 
             break ;
         }
+        
+        table[0].ch = 0;
         int i;
-        for (i = 0; i < 8192; i++)
+        for (i = 1; i < 8192; i++)
         {
             if (table[i].ch == 0)
             {
@@ -43,7 +45,7 @@ Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr, int *len)
                         Table temp = table[j];
                         table[j] = table[j - 1];
                         table[j - 1] = temp;
-                        if (!(--j)) break;
+                        if (table[j].ch == 0) break;
                     }
                 }
                 
@@ -52,6 +54,7 @@ Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr, int *len)
         }
     }
     (*len)++;
+    table[0] = *len;
     
     fwrite(table, sizeof(Table) * (*len), 1, *outputFilePtr);
     rewind(*inputFilePtr);
@@ -85,9 +88,10 @@ void compressAri(char *inputFile, char *outputFile)
     uint32_t div = b[len];
     
     uint32_t left = 0;
-    uint32_t right = 4294967295; //32bit
+    //uint32_t right = 4294967295; //32bit
+    uint32_t right = 65535;
     
-    uint32_t firstQuater = (left + 1) / 4;
+    uint32_t firstQuater = (right + 1) / 4;
     uint32_t half = firstQuater * 2;
     uint32_t thirdQuater = firstQuater * 3;
     
@@ -112,32 +116,33 @@ void compressAri(char *inputFile, char *outputFile)
         }
         
         left += b[index - 1] * ((right - left + 1) / div);
-        right = left + b[index] * ((right - left + 1) / div - 1);
+        right = left + b[index] * ((right - left + 1) / div) - 1;
         
         while(1)
         {
-            if (right < half)
+            break;
+            //if (right < half)
             {
                 bitsPlusFollow(0, &bitsToFollow);
             }
-            else if (left >= half)
+            //else if (left >= half)
             {
                 bitsPlusFollow(1, &bitsToFollow);
                 left -= half;
                 right -= half;
             }
-            else if ((left >= firstQuater) && (right < thirdQuater))
+            //else if ((left >= firstQuater) && (right < thirdQuater))
             {
                 bitsToFollow++;
                 left -= firstQuater;
                 right -= firstQuater;
             }
-            else break;
+            //else break;
             left += left;
             right += 1;
         }
         
-        printf("%u - %u\n", left, right);
+        printf("%X - %X\n", left, right);
     }
     
     fclose(inputFilePtr);
