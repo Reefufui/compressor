@@ -7,8 +7,8 @@ enum {
 };
 
 typedef struct CompressOptions {
-    char *ifile;
-    char *ofile;
+    char *inputFile;
+    char *outputFile;
     char mode;
     int  method;
 } CompressOptions;

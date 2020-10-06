@@ -12,24 +12,24 @@ int main(int argc, char **argv) {
     if (opts != NULL) {
         if (opts->mode == 'c') {
             if (opts->method == ARI) {
-                compress_ari(opts->ifile, opts->ofile);
+                compressAri(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == PPM) {
-                compress_ppm(opts->ifile, opts->ofile);
+                compress_ppm(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == BWT) {
-                compress_bwt(opts->ifile, opts->ofile);
+                compress_bwt(opts->inputFile, opts->outputFile);
             }
         }
         else if (opts->mode == 'd') {
             if (opts->method == ARI) {
-                decompress_ari(opts->ifile, opts->ofile);
+                decompressAri(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == PPM) {
-                decompress_ppm(opts->ifile, opts->ofile);
+                decompress_ppm(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == BWT) {
-                decompress_bwt(opts->ifile, opts->ofile);
+                decompress_bwt(opts->inputFile, opts->outputFile);
             }
         }
     }

@@ -1,4 +1,4 @@
 #pragma once
 
-void compress_ari(char *ifile, char *ofile);
-void decompress_ari(char *ifile, char *ofile);
+void compressAri(char *inputFile, char *outputFile);
+void decompressAri(char *compressedFile, char *dataFile);
