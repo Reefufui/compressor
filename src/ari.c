@@ -52,7 +52,6 @@ Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr)
         }
     }
     fileLen--;
-    //table[0].count = 6;
     
     // writing length of file in header
     fwrite(&fileLen, sizeof(fileLen), 1, *outputFilePtr);
@@ -93,39 +92,23 @@ int indexForSymbol(uint8_t c, Table *table)
     return index;
 }
 
-void bitsPlusFollow(ariInt bit, ariInt *bitsToFollow, FILE **outputFilePtr)
+void writeBit(int bit, FILE **outputFilePtr)
 {
     static ariInt buff = 0;
-    static int recorded = 0;
+    static int remaining = 0;
     
-    if (bit == 2)
+    
+    
+    printf("%u", bit);
+}
+
+void bitsPlusFollow(ariInt bit, ariInt *bitsToFollow, FILE **outputFilePtr)
+{
+    writeBit(bit, outputFilePtr);
+    
+    for (; (*bitsToFollow) > 0; (*bitsToFollow)--)
     {
-        buff = buff << (31 - recorded);
-        fwrite(&buff, sizeof(ariInt), 1, *outputFilePtr);
-        return;
-    }
-    
-    recorded++;
-    buff = buff << 1;
-    buff += bit;
-    
-    if (recorded == 32)
-    {
-        fwrite(&buff, sizeof(ariInt), 1, *outputFilePtr);
-        buff = recorded = 0;
-    }
-    
-    for (; *bitsToFollow > 0; (*bitsToFollow)--)
-    {
-        ++recorded;
-        if (recorded == 32)
-        {
-            fwrite(&buff, sizeof(ariInt), 1, *outputFilePtr);
-            buff = recorded = 0;
-        }
-        
-        buff = buff << 1;
-        buff += !bit;
+        writeBit(!bit, outputFilePtr);
     }
 }
 
@@ -163,11 +146,11 @@ void compressAri(char *inputFile, char *outputFile)
         {
             if (right < half)
             {
-                //bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
             }
             else if (left >= half)
             {
-                //bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
                 left -= half;
                 right -= half;
             }
@@ -182,7 +165,7 @@ void compressAri(char *inputFile, char *outputFile)
             right += right + 1;
         }
         
-        printf("%u - %u\n", left, right);
+        //printf("%u - %u\n", left, right);
     }
     
     free(table);
