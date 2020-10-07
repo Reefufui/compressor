@@ -14,13 +14,14 @@ typedef struct {
 
 Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr)
 {
-    const uint8_t charmax = 255;
+    uint8_t c = 0;
+    const uint8_t charmax = ~c;
     Table *table = calloc(charmax, sizeof(Table));
     ariInt fileLen = 0;
     
     while (1)
     {
-        char c = fgetc(*inputFilePtr);
+        c = fgetc(*inputFilePtr);
         if (feof(*inputFilePtr)) break;
         
         ++fileLen;
@@ -39,21 +40,19 @@ Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr)
             {
                 table[i].count += 1;
                 int j = i;
-                if (j > 1)
+                while ((table[j - 1].count < table[j].count) && (j > 1))
                 {
-                    while (table[j - 1].count < table[j].count)
-                    {
-                        Table temp = table[j];
-                        table[j] = table[j - 1];
-                        table[j - 1] = temp;
-                        if (!(--j)) break;
-                    }
+                    Table temp = table[j];
+                    table[j] = table[j - 1];
+                    table[j - 1] = temp;
+                    --j;
                 }
                 break;
             }
         }
     }
     fileLen--;
+    //table[0].count = 6;
     
     // writing length of file in header
     fwrite(&fileLen, sizeof(fileLen), 1, *outputFilePtr);
@@ -73,17 +72,31 @@ int *buildPosList(Table *table)
     for (i = 1; i < lenTable; i++)
     {
         b[i] = b[i - 1] + table[i].count;
-        printf("%d\t", b[i]);
+        printf("%d - %d\n", i, b[i]);
     }
     
     return b;
 }
 
-void bitsPlusFollow(ariInt bit, int *bitsToFollow, FILE **outputFilePtr)
+int indexForSymbol(uint8_t c, Table *table)
+{
+    int index;
+    int i;
+    for (i = 1; i < table[0].ch; i++)
+    {
+        if (table[i].ch == c)
+        {
+            index = i;
+            break;
+        }
+    }
+    return index;
+}
+
+void bitsPlusFollow(ariInt bit, ariInt *bitsToFollow, FILE **outputFilePtr)
 {
     static ariInt buff = 0;
     static int recorded = 0;
-    
     
     if (bit == 2)
     {
@@ -132,28 +145,16 @@ void compressAri(char *inputFile, char *outputFile)
     ariInt half = firstQuater * 2;
     ariInt thirdQuater = firstQuater * 3;
     
-    printf("%d %d %d %d %d\n", left, right, firstQuater, half, thirdQuater);
+    printf("%d %d %d %d %d\n", left, firstQuater, half, thirdQuater, right);
     
     ariInt bitsToFollow = 0; // Сколько бит сбрасывать
     
-#if 0    
     while(1)
     {
         char c = fgetc(inputFilePtr);
         if( feof(inputFilePtr) ) break;
         
-        int index;
-        {
-            int i = 0;
-            for (i = 1; i < len; i++)
-            {
-                if (table[i].ch == c)
-                {
-                    index = i;
-                    break;
-                }
-            }
-        }
+        int index = indexForSymbol(c, table);
         
         left += b[index - 1] * ((right - left + 1) / div);
         right = left + b[index] * ((right - left + 1) / div) - 1;
@@ -162,11 +163,11 @@ void compressAri(char *inputFile, char *outputFile)
         {
             if (right < half)
             {
-                bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
+                //bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
             }
             else if (left >= half)
             {
-                bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
+                //bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
                 left -= half;
                 right -= half;
             }
@@ -181,40 +182,25 @@ void compressAri(char *inputFile, char *outputFile)
             right += right + 1;
         }
         
-        printf("%X - %X\n", left, right);
+        printf("%u - %u\n", left, right);
     }
     
-    {
-        int i = 0;
-        ariInt mask = 1;
-        mask = mask << 31;
-        for (i = 0; i < 32; i++)
-        {
-            bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
-            left = left << 1;
-        }
-        bitsPlusFollow(2, &bitsToFollow, &outputFilePtr);
-    }
-#endif
-    
+    free(table);
+    free(b);
     fclose(inputFilePtr);
     fclose(outputFilePtr);
 }
 
 Table *reconstructTable(FILE **compressedFilePtr)
 {
-    ariInt lenFile;
-    fread(&lenFile, sizeof(ariInt), 1, *compressedFilePtr);
+    uint8_t lenOfTable;
+    fseek(*compressedFilePtr, sizeof(uint8_t), SEEK_CUR); //skip 0
+    fread(&lenOfTable, sizeof(uint8_t), 1, *compressedFilePtr);
+    fseek(*compressedFilePtr, sizeof(ariInt), SEEK_SET); //skip length
     
-    char len;
-    fread(&len, sizeof(char), 1, *compressedFilePtr);
+    Table *table = calloc(lenOfTable, sizeof(Table));
     
-    Table *table = calloc(8192, sizeof(Table));
-    
-    rewind(*compressedFilePtr);
-    fread(table, sizeof(Table) * len, 1, *compressedFilePtr);
-    
-    printf("initial len is %u\n", lenFile);
+    fread(table, sizeof(Table) * lenOfTable, 1, *compressedFilePtr);
     
     return table;
 }
@@ -224,33 +210,20 @@ void decompressAri(char *compressedFile, char *dataFile)
     FILE *compressedFilePtr = (FILE *)fopen(compressedFile, "rb");
     FILE *dataFilePtr = (FILE *)fopen(dataFile, "wb");
     
+    ariInt lenFile;
+    fread(&lenFile, sizeof(ariInt), 1, compressedFilePtr);
+    
     Table *table = reconstructTable(&compressedFilePtr);
     
-    ariInt value;
-    fread(&value, sizeof(ariInt), 1, dataFilePtr);
-    printf("%u\n", value);
-    
-    char len = table[0].ch;
-    ariInt lenFile = table[0].count;
-    int b[table[0].ch];
-    {
-        b[0] = 0;
-        int i = 1;
-        for (i = 1; i < len; i++)
-        {
-            b[i] = b[i - 1] + table[i].count;
-        }
-    }
-    
-    ariInt *div = NULL;
+    int *b = buildPosList(table);
+    uint8_t lenTable = table[0].ch;
+    ariInt div = b[lenTable - 1];
     
     ariInt left = 0;
-    ariInt right = 65535; //16bit
-    ariInt i = 0;
-    
-    ariInt firstQuater = (left + 1) / 4;  // 16384
-    ariInt half = firstQuater * 2;        // 32768
-    ariInt thirdQuater = firstQuater * 3; // 49152
+    ariInt right = ~left;
+    ariInt firstQuater = (left + 1) / 4;
+    ariInt half = firstQuater * 2;
+    ariInt thirdQuater = firstQuater * 3;
     
     while (lenFile--)
     {
