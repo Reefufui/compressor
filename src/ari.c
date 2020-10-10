@@ -1,114 +1,88 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ari.h"
 
-typedef unsigned short ariInt; //16 bit
+//typedef unsigned short ariInt; //16 bit
 //typedef uint32_t ariInt; //32 bit
+typedef uint64_t ariInt; //64 bit
 
-typedef struct {
-    uint8_t count;
-    uint8_t ch;
-} Table;
+typedef enum {
+    BASIC_AGRESSION,
+    ENGLISH_TEXT,
+    DEFAULT
+} CharListTemplate;
 
-Table *constructTable(FILE **inputFilePtr, FILE **outputFilePtr)
+void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
 {
-    uint8_t c = 0;
-    const uint8_t charmax = ~c;
-    Table *table = calloc(charmax, sizeof(Table));
-    ariInt fileLen = 0;
-    
-    while (1)
+    if (!(*charList))
     {
-        c = fgetc(*inputFilePtr);
-        if (feof(*inputFilePtr)) break;
-        
-        ++fileLen;
-        
-        uint8_t i;
-        for (i = 1; i < charmax; i++)
+        *charList = calloc(258, sizeof(uint32_t));
+    }
+    
+    static uint32_t agression = 0;
+    
+    switch (type)
+    {
+        case BASIC_AGRESSION :
         {
-            if (table[i].ch == 0)
+            int i;
+            (*charList)[c + 1] += agression;
+            
+            for (i = c + 2; i < 257; i++) //for all chars [ )
             {
-                table[i].ch = c;
-                table[i].count = 1;
-                table[0].ch = i; // len of table storage
-                break;
+                (*charList)[i] += agression;
             }
-            else if (table[i].ch == c)
+        }
+        break;
+        
+        case ENGLISH_TEXT :
+        {
+            //(*charList) = {};
+        }
+        break;
+        
+        default :
+        {
+            int i;
+            for (i = 1; i < 257; i++) //for all chars [ )
             {
-                table[i].count += 1;
-                int j = i;
-                while ((table[j - 1].count < table[j].count) && (j > 1))
-                {
-                    Table temp = table[j];
-                    table[j] = table[j - 1];
-                    table[j - 1] = temp;
-                    --j;
-                }
-                break;
+                (*charList)[i] += (*charList)[i - 1] + 1;
             }
         }
     }
-    fileLen--;
-    
-    // writing length of file in header
-    fwrite(&fileLen, sizeof(fileLen), 1, *outputFilePtr);
-    // writing character table in header
-    fwrite(table, sizeof(Table) * table[0].ch, 1, *outputFilePtr);
-    
-    rewind(*inputFilePtr);
-    return table;
-}
-
-int *buildPosList(Table *table)
-{
-    uint8_t lenTable = table[0].ch;
-    int *b = calloc(lenTable, sizeof(int));
     
     int i;
-    for (i = 1; i < lenTable; i++)
+    for (i = 0; i < 258; i++) //for all chars and len cell
     {
-        b[i] = b[i - 1] + table[i].count;
-        printf("%d - %d\n", i, b[i]);
+        //printf("%d - %u\n", i, charList[i]);
     }
-    
-    return b;
-}
-
-int indexForSymbol(uint8_t c, Table *table)
-{
-    int index;
-    int i;
-    for (i = 1; i < table[0].ch; i++)
-    {
-        if (table[i].ch == c)
-        {
-            index = i;
-            break;
-        }
-    }
-    return index;
 }
 
 void writeBit(int bit, FILE **outputFilePtr)
 {
-    static ariInt buff = 0;
-    static int remaining = 0;
+    static uint8_t buff = 0;
+    static int shift = 7;
     
+    if (shift < 0)
+    {
+        fwrite(&buff, 1, 1, *outputFilePtr);
+        buff = 0;
+        shift = 7;
+    }
     
-    
-    printf("%u", bit);
+    buff += bit << shift--;
 }
 
 void bitsPlusFollow(ariInt bit, ariInt *bitsToFollow, FILE **outputFilePtr)
 {
-    writeBit(bit, outputFilePtr);
+    writeBit(!(bit == 0), outputFilePtr);
     
     for (; (*bitsToFollow) > 0; (*bitsToFollow)--)
     {
-        writeBit(!bit, outputFilePtr);
+        writeBit(!(bit == 1), outputFilePtr);
     }
 }
 
@@ -117,40 +91,42 @@ void compressAri(char *inputFile, char *outputFile)
     FILE *inputFilePtr = (FILE *)fopen(inputFile, "rb");
     FILE *outputFilePtr = (FILE *)fopen(outputFile, "wb");
     
-    Table *table = constructTable(&inputFilePtr, &outputFilePtr);
-    int *b = buildPosList(table);
-    uint8_t lenTable = table[0].ch;
-    ariInt div = b[lenTable - 1];
+    uint32_t *charList = NULL;
+    touchCharList(&charList, DEFAULT, 0);
+    
     
     ariInt left = 0;
-    ariInt right = ~left;
-    ariInt firstQuater = (right + 1) / 4;
-    ariInt half = firstQuater * 2;
-    ariInt thirdQuater = firstQuater * 3;
+    ariInt right = 0xFFFFFFFF;
+    const ariInt firstQuater = (right + 1) / 4;
+    const ariInt half = firstQuater * 2;
+    const ariInt thirdQuater = firstQuater * 3;
     
-    printf("%d %d %d %d %d\n", left, firstQuater, half, thirdQuater, right);
-    
-    ariInt bitsToFollow = 0; // Сколько бит сбрасывать
+    ariInt bitsToFollow = 0;
+    ariInt mask = 1 << 31;
     
     while(1)
     {
-        char c = fgetc(inputFilePtr);
+        ariInt div = charList[256];
+        uint8_t c = fgetc(inputFilePtr);
         if( feof(inputFilePtr) ) break;
         
-        int index = indexForSymbol(c, table);
+        ++charList[257]; //recording length of file in lenOfFile cell
         
-        left += b[index - 1] * ((right - left + 1) / div);
-        right = left + b[index] * ((right - left + 1) / div) - 1;
+        {
+            ariInt oldLeft = left;
+            left  = oldLeft + charList[c]     * (right - oldLeft + 1) / div;
+            right = oldLeft + charList[c + 1] * (right - oldLeft + 1) / div - 1;
+        }
         
         while(1)
         {
             if (right < half)
             {
-                bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
             }
             else if (left >= half)
             {
-                bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
                 left -= half;
                 right -= half;
             }
@@ -160,32 +136,49 @@ void compressAri(char *inputFile, char *outputFile)
                 left -= firstQuater;
                 right -= firstQuater;
             }
-            else break;
+            else
+            {
+                break;
+            }
             left += left;
             right += right + 1;
         }
         
-        //printf("%u - %u\n", left, right);
+        touchCharList(&charList, BASIC_AGRESSION, c);
     }
     
-    free(table);
-    free(b);
+    int i;
+    for (i = 1; i < 8; i++)
+    {
+        mask = 1 << (32 - i);
+        bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
+    }
+    
+    fwrite(&(charList[257]), sizeof(uint32_t), 1, outputFilePtr);
+    
+    free(charList);
     fclose(inputFilePtr);
     fclose(outputFilePtr);
 }
 
-Table *reconstructTable(FILE **compressedFilePtr)
+int readBit(FILE **compressedFilePtr)
 {
-    uint8_t lenOfTable;
-    fseek(*compressedFilePtr, sizeof(uint8_t), SEEK_CUR); //skip 0
-    fread(&lenOfTable, sizeof(uint8_t), 1, *compressedFilePtr);
-    fseek(*compressedFilePtr, sizeof(ariInt), SEEK_SET); //skip length
+    static uint8_t buff = 0;
+    static int remain = 0;
     
-    Table *table = calloc(lenOfTable, sizeof(Table));
+    if (!remain)
+    {
+        fread(&buff, 1, 1, *compressedFilePtr);
+        remain = 8;
+    }
     
-    fread(table, sizeof(Table) * lenOfTable, 1, *compressedFilePtr);
+    const uint8_t mask = 1 << 7;
     
-    return table;
+    int bit = mask & buff;
+    buff <<= 1;
+    --remain;
+    
+    return !(bit == 0);
 }
 
 void decompressAri(char *compressedFile, char *dataFile)
@@ -193,26 +186,83 @@ void decompressAri(char *compressedFile, char *dataFile)
     FILE *compressedFilePtr = (FILE *)fopen(compressedFile, "rb");
     FILE *dataFilePtr = (FILE *)fopen(dataFile, "wb");
     
-    ariInt lenFile;
-    fread(&lenFile, sizeof(ariInt), 1, compressedFilePtr);
-    
-    Table *table = reconstructTable(&compressedFilePtr);
-    
-    int *b = buildPosList(table);
-    uint8_t lenTable = table[0].ch;
-    ariInt div = b[lenTable - 1];
+    uint32_t *charList = NULL;
+    touchCharList(&charList, DEFAULT, 0);
     
     ariInt left = 0;
-    ariInt right = ~left;
-    ariInt firstQuater = (left + 1) / 4;
-    ariInt half = firstQuater * 2;
-    ariInt thirdQuater = firstQuater * 3;
+    ariInt right = 0xFFFFFFFF;
+    const ariInt firstQuater = (right + 1) / 4;
+    const ariInt half = firstQuater * 2;
+    const ariInt thirdQuater = firstQuater * 3;
     
-    while (lenFile--)
+    //read length of file
+    fseek(compressedFilePtr, -sizeof(uint32_t), SEEK_END);
+    fread(&(charList[257]), sizeof(uint32_t), 1, compressedFilePtr);
+    //printf("len is %u\n", charList[257]);
+    rewind(compressedFilePtr);
+    
+    uint32_t value;
     {
-        printf("!\n");
+        uint32_t temp = 0;
+        uint8_t bytes[4];
+        int i = 3;
+        for (; i > -1; i--)
+        {
+            fread(&(bytes[i]), 1, 1, compressedFilePtr);
+        }
+        memcpy(&temp, bytes, 4);
+        value = temp;
     }
     
+    int j = 0;
+    while (charList[257]--)
+    {
+        ariInt div = charList[256];
+        j++;
+        ariInt oldLeft = left;
+        ariInt oldRight = right;
+        uint8_t c;
+        for (c = 0; c < 256; c++) //for all possible 255 chars
+        {
+            left = oldLeft + charList[c] * (oldRight - oldLeft + 1) / div;
+            right = oldLeft + charList[c + 1] * (oldRight - oldLeft + 1) / div - 1;
+            if ((left <= value) && (value <= right)) break;
+            //printf("%d -- %08X : %08X < %08X < %08X\n", j, c, left, value, right);
+        }
+        
+        while(1)
+        {
+            if (right < half)
+            {
+            }
+            else if (left >= half)
+            {
+                value -= half;
+                left -= half;
+                right -= half;
+            }
+            else if ((left >= firstQuater) && (right < thirdQuater))
+            {
+                value -= firstQuater;
+                left -= firstQuater;
+                right -= firstQuater;
+            }
+            else
+            {
+                break;
+            }
+            left += left;
+            right += right + 1;
+            
+            value = value << 1;
+            value += readBit(&compressedFilePtr);
+        }
+        
+        fwrite(&c, 1, 1, dataFilePtr);
+        touchCharList(&charList, BASIC_AGRESSION, c);
+    }
+    
+    free(charList);
     fclose(compressedFilePtr);
     fclose(dataFilePtr);
 }
