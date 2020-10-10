@@ -96,8 +96,8 @@ void compressAri(char *inputFile, char *outputFile)
     
     
     ariInt left = 0;
-    ariInt right = 0xFFFFFFFF;
-    const ariInt firstQuater = (right + 1) / 4;
+    ariInt right = 0x100000000;
+    const ariInt firstQuater = right / 4;
     const ariInt half = firstQuater * 2;
     const ariInt thirdQuater = firstQuater * 3;
     
@@ -114,8 +114,8 @@ void compressAri(char *inputFile, char *outputFile)
         
         {
             ariInt oldLeft = left;
-            left  = oldLeft + charList[c]     * (right - oldLeft + 1) / div;
-            right = oldLeft + charList[c + 1] * (right - oldLeft + 1) / div - 1;
+            left  = oldLeft + charList[c]     * (right - oldLeft) / div;
+            right = oldLeft + charList[c + 1] * (right - oldLeft) / div;
         }
         
         while(1)
@@ -141,7 +141,7 @@ void compressAri(char *inputFile, char *outputFile)
                 break;
             }
             left += left;
-            right += right + 1;
+            right += right;
         }
         
         touchCharList(&charList, BASIC_AGRESSION, c);
@@ -190,8 +190,8 @@ void decompressAri(char *compressedFile, char *dataFile)
     touchCharList(&charList, DEFAULT, 0);
     
     ariInt left = 0;
-    ariInt right = 0xFFFFFFFF;
-    const ariInt firstQuater = (right + 1) / 4;
+    ariInt right = 0x100000000;
+    const ariInt firstQuater = right / 4;
     const ariInt half = firstQuater * 2;
     const ariInt thirdQuater = firstQuater * 3;
     
@@ -224,10 +224,11 @@ void decompressAri(char *compressedFile, char *dataFile)
         uint8_t c;
         for (c = 0; c < 256; c++) //for all possible 255 chars
         {
-            left = oldLeft + charList[c] * (oldRight - oldLeft + 1) / div;
-            right = oldLeft + charList[c + 1] * (oldRight - oldLeft + 1) / div - 1;
+            left = oldLeft + charList[c] * (oldRight - oldLeft) / div;
+            right = oldLeft + charList[c + 1] * (oldRight - oldLeft) / div;
             if ((left <= value) && (value <= right)) break;
-            //printf("%d -- %08X : %08X < %08X < %08X\n", j, c, left, value, right);
+            printf("%d -- %02X : %09X < %08X < %09X\n", j, c, left, value, right);
+            //if (c == 255) break;
         }
         
         while(1)
@@ -252,7 +253,7 @@ void decompressAri(char *compressedFile, char *dataFile)
                 break;
             }
             left += left;
-            right += right + 1;
+            right += right;
             
             value = value << 1;
             value += readBit(&compressedFilePtr);
