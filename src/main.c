@@ -15,7 +15,7 @@ int main(int argc, char **argv) {
                 compressAri(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == PPM) {
-                compress_ppm(opts->inputFile, opts->outputFile);
+                compressPpm(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == BWT) {
                 compress_bwt(opts->inputFile, opts->outputFile);
@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
                 decompressAri(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == PPM) {
-                decompress_ppm(opts->inputFile, opts->outputFile);
+                decompressPpm(opts->inputFile, opts->outputFile);
             }
             else if (opts->method == BWT) {
                 decompress_bwt(opts->inputFile, opts->outputFile);

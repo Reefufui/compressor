@@ -5,15 +5,22 @@
 
 #include "ari.h"
 
-//typedef unsigned short ariInt; //16 bit
-//typedef uint32_t ariInt; //32 bit
-typedef uint64_t ariInt; //64 bit
+#define DRAW_HIST
 
-typedef enum {
-    BASIC_AGRESSION,
-    ENGLISH_TEXT,
-    DEFAULT
-} CharListTemplate;
+void generateCSV(uint32_t *charList)
+{
+    FILE *csvFilePtr = (FILE *)fopen("charList.csv", "wb");
+    
+    fprintf(csvFilePtr, "character,weight,\n");
+    
+    int i = 1;
+    for (i = 1; i < 257; i++) //for all chars and len cell
+    {
+        fprintf(csvFilePtr, "%d,%u,\n", i, charList[i] - charList[i - 1]);
+    }
+    
+    fclose(csvFilePtr);
+}
 
 void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
 {
@@ -22,7 +29,7 @@ void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
         *charList = calloc(258, sizeof(uint32_t));
     }
     
-    static uint32_t agression = 0;
+    static uint32_t agression = 1;
     
     switch (type)
     {
@@ -36,29 +43,27 @@ void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
                 (*charList)[i] += agression;
             }
         }
-        break;
         
-        case ENGLISH_TEXT :
+        if ((*charList)[256] < 200000)
         {
-            //(*charList) = {};
+            break;
         }
-        break;
+        else
+        {
+            (*charList)[0] = 0;
+        }
         
         default :
         {
             int i;
             for (i = 1; i < 257; i++) //for all chars [ )
             {
-                (*charList)[i] += (*charList)[i - 1] + 1;
+                (*charList)[i] = (*charList)[i - 1] + 1;
             }
         }
     }
     
-    int i;
-    for (i = 0; i < 258; i++) //for all chars and len cell
-    {
-        //printf("%d - %u\n", i, charList[i]);
-    }
+    //generateCSV(*charList);
 }
 
 void writeBit(int bit, FILE **outputFilePtr)
@@ -66,14 +71,14 @@ void writeBit(int bit, FILE **outputFilePtr)
     static uint8_t buff = 0;
     static int shift = 7;
     
-    if (shift < 0)
+    if ((shift < 0) || (bit == -1))
     {
         fwrite(&buff, 1, 1, *outputFilePtr);
         buff = 0;
         shift = 7;
     }
     
-    buff += bit << shift--;
+    if (bit != -1) buff += bit << shift--;
 }
 
 void bitsPlusFollow(ariInt bit, ariInt *bitsToFollow, FILE **outputFilePtr)
@@ -96,8 +101,8 @@ void compressAri(char *inputFile, char *outputFile)
     
     
     ariInt left = 0;
-    ariInt right = 0x100000000;
-    const ariInt firstQuater = right / 4;
+    ariInt right = 0xFFFFFFFF;
+    const ariInt firstQuater = (right + 1) / 4;
     const ariInt half = firstQuater * 2;
     const ariInt thirdQuater = firstQuater * 3;
     
@@ -114,19 +119,20 @@ void compressAri(char *inputFile, char *outputFile)
         
         {
             ariInt oldLeft = left;
-            left  = oldLeft + charList[c]     * (right - oldLeft) / div;
-            right = oldLeft + charList[c + 1] * (right - oldLeft) / div;
+            left  = oldLeft + ((double)charList[c]     * (right - oldLeft + 1)) / div;
+            right = oldLeft + ((double)charList[c + 1] * (right - oldLeft + 1)) / div - 1;
         }
         
         while(1)
         {
+            //printf("%d -- %08X : %08X < %08X < %08X\n", charList[257], c, left, half, right);
             if (right < half)
             {
-                bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(0, &bitsToFollow, &outputFilePtr);
             }
             else if (left >= half)
             {
-                bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
+                bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
                 left -= half;
                 right -= half;
             }
@@ -141,19 +147,17 @@ void compressAri(char *inputFile, char *outputFile)
                 break;
             }
             left += left;
-            right += right;
+            right += right + 1;
         }
         
         touchCharList(&charList, BASIC_AGRESSION, c);
     }
     
-    int i;
-    for (i = 1; i < 8; i++)
-    {
-        mask = 1 << (32 - i);
-        bitsPlusFollow(left & mask, &bitsToFollow, &outputFilePtr);
-    }
     
+    printf("bitsToFollow = %d\n", bitsToFollow);
+    bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
+    writeBit(-1, &outputFilePtr);
+    //fwrite(&bitsToFollow, sizeof(ariInt), 1, outputFilePtr);
     fwrite(&(charList[257]), sizeof(uint32_t), 1, outputFilePtr);
     
     free(charList);
@@ -190,8 +194,8 @@ void decompressAri(char *compressedFile, char *dataFile)
     touchCharList(&charList, DEFAULT, 0);
     
     ariInt left = 0;
-    ariInt right = 0x100000000;
-    const ariInt firstQuater = right / 4;
+    ariInt right = 0xFFFFFFFF;
+    const ariInt firstQuater = (right + 1) / 4;
     const ariInt half = firstQuater * 2;
     const ariInt thirdQuater = firstQuater * 3;
     
@@ -224,15 +228,19 @@ void decompressAri(char *compressedFile, char *dataFile)
         uint8_t c;
         for (c = 0; c < 256; c++) //for all possible 255 chars
         {
-            left = oldLeft + charList[c] * (oldRight - oldLeft) / div;
-            right = oldLeft + charList[c + 1] * (oldRight - oldLeft) / div;
+            left = oldLeft + ((double)charList[c] * (oldRight - oldLeft + 1)) / div;
+            right = oldLeft + ((double)charList[c + 1] * (oldRight - oldLeft + 1)) / div - 1;
             if ((left <= value) && (value <= right)) break;
-            printf("%d -- %02X : %09X < %08X < %09X\n", j, c, left, value, right);
-            //if (c == 255) break;
         }
+        
+        ariInt testLeft = oldLeft + ((double)charList[c - 1] * (oldRight - oldLeft + 1)) / div;
+        ariInt testRight = oldLeft + ((double)charList[c] * (oldRight - oldLeft + 1)) / div - 1;
+        
+        //printf("%d -- %08X : %08X < %08X < %08X - могло бы быть\n", j, c - 1, testLeft, value, testRight);
         
         while(1)
         {
+            //printf("%d -- %08X : %08X < %08X < %08X\n", j, c, left, value, right);
             if (right < half)
             {
             }
@@ -253,14 +261,15 @@ void decompressAri(char *compressedFile, char *dataFile)
                 break;
             }
             left += left;
-            right += right;
+            value += value;
+            right += right + 1;
             
-            value = value << 1;
             value += readBit(&compressedFilePtr);
+            
         }
         
-        fwrite(&c, 1, 1, dataFilePtr);
         touchCharList(&charList, BASIC_AGRESSION, c);
+        fwrite(&c, 1, 1, dataFilePtr);
     }
     
     free(charList);

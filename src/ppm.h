@@ -1,4 +1,4 @@
 #pragma once
 
-void compress_ppm(char *inputFile, char *outputFile);
-void decompress_ppm(char *inputFile, char *outputFile);
+void compressPpm(char *inputFile, char *outputFile);
+void decompressPpm(char *inputFile, char *outputFile);
