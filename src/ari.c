@@ -44,13 +44,18 @@ void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
             }
         }
         
-        if ((*charList)[256] < 200000)
+        if ((*charList)[256] < 2000)
         {
             break;
         }
         else
         {
-            (*charList)[0] = 0;
+            int i;
+            for (i = 1; i < 257; i++) //for all chars [ )
+            {
+                (*charList)[i] += 1;
+                (*charList)[i] /= 2;
+            }
         }
         
         default :
