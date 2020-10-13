@@ -5,7 +5,7 @@
 
 #include "ari.h"
 
-#define DRAW_HIST
+//#define DRAW_HIST
 
 void generateCSV(uint32_t *charList)
 {
@@ -22,53 +22,81 @@ void generateCSV(uint32_t *charList)
     fclose(csvFilePtr);
 }
 
-void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c)
+void touchCharList(uint32_t ***charList, int *prevTableID, CharListTemplate type, uint8_t c)
 {
-    if (!(*charList))
-    {
-        *charList = calloc(258, sizeof(uint32_t));
-    }
+    if (!(*charList)) printf("Memory allocation error!\n");
     
-    static uint32_t agression = 1;
+    uint32_t agression[] = {1, 100000};
     
-    switch (type)
+    int tableID = 0;
+    for (; tableID < 2; tableID++)
     {
-        case BASIC_AGRESSION :
+        switch (type)
         {
-            int i;
-            (*charList)[c + 1] += agression;
+            case BASIC_AGRESSION :
+            {
+                int i;
+                (*charList)[tableID][c + 1] += agression[tableID];
+                
+                for (i = c + 2; i < 257; i++) //for all chars [ )
+                {
+                    (*charList)[tableID][i] += agression[tableID];
+                }
+            }
             
-            for (i = c + 2; i < 257; i++) //for all chars [ )
+            if ((*charList)[tableID][256] < 5000000)
             {
-                (*charList)[i] += agression;
+                break;
             }
-        }
-        
-        if ((*charList)[256] < 2000)
-        {
-            break;
-        }
-        else
-        {
-            int i;
-            for (i = 1; i < 257; i++) //for all chars [ )
+            else
             {
-                (*charList)[i] += 1;
-                (*charList)[i] /= 2;
+                int i;
+                for (i = 1; i < 257; i++)
+                {
+                    (*charList)[tableID][i] /= 2;
+                }
+                for (i = 1; i < 257; i++)
+                {
+                    (*charList)[tableID][i] += i;
+                }
+                break;
             }
-        }
-        
-        default :
-        {
-            int i;
-            for (i = 1; i < 257; i++) //for all chars [ )
+            
+            default :
             {
-                (*charList)[i] = (*charList)[i - 1] + 1;
+                int i;
+                for (i = 1; i < 257; i++)
+                {
+                    (*charList)[tableID][i] = (*charList)[tableID][i - 1] + 1;
+                }
             }
         }
     }
     
+    uint64_t w1 = (*charList)[0][c + 1] - (*charList)[0][c];
+    uint64_t w2 = (*charList)[1][c + 1] - (*charList)[1][c];
+    uint64_t avg = (*charList)[0][256] / 255;
+    
+    if (1 && (w1 % 5 == 0))
+    {
+        printf("\t%02X (1) -> %u\t(10) -> %u\n", c, w1, w2);
+        printf("avg: %u\n", avg);
+    }
+    
+    
+    const int trashHold = 20;
+    static int counter = 0;
+    
+    int mountGrow = w1 > (avg + 1000);
+    if (mountGrow) ++counter;
+    if (!mountGrow) counter = 0;
+    
+    if (counter > trashHold) *prevTableID = 1;
+    if (!counter) *prevTableID = 0;
+    
+#ifdef DRAW_HIST
     //generateCSV(*charList);
+#endif
 }
 
 void writeBit(int bit, FILE **outputFilePtr)
@@ -101,9 +129,15 @@ void compressAri(char *inputFile, char *outputFile)
     FILE *inputFilePtr = (FILE *)fopen(inputFile, "rb");
     FILE *outputFilePtr = (FILE *)fopen(outputFile, "wb");
     
-    uint32_t *charList = NULL;
-    touchCharList(&charList, DEFAULT, 0);
-    
+    uint32_t **charList = calloc(5, sizeof(uint32_t*));
+    int tableID = 0;
+    {
+        for (; tableID < 5; tableID++)
+        {
+            charList[tableID] = calloc(258, sizeof(uint32_t));
+        }
+        tableID = 0;
+    }
     
     ariInt left = 0;
     ariInt right = 0xFFFFFFFF;
@@ -114,18 +148,20 @@ void compressAri(char *inputFile, char *outputFile)
     ariInt bitsToFollow = 0;
     ariInt mask = 1 << 31;
     
+    touchCharList(&charList, &tableID, DEFAULT, 0);
+    
     while(1)
     {
-        ariInt div = charList[256];
+        ariInt div = charList[tableID][256];
         uint8_t c = fgetc(inputFilePtr);
         if( feof(inputFilePtr) ) break;
         
-        ++charList[257]; //recording length of file in lenOfFile cell
+        ++charList[0][257]; //recording length of file in lenOfFile cell
         
         {
             ariInt oldLeft = left;
-            left  = oldLeft + ((double)charList[c]     * (right - oldLeft + 1)) / div;
-            right = oldLeft + ((double)charList[c + 1] * (right - oldLeft + 1)) / div - 1;
+            left  = oldLeft + ((double)charList[tableID][c]     * (right - oldLeft + 1)) / div;
+            right = oldLeft + ((double)charList[tableID][c + 1] * (right - oldLeft + 1)) / div - 1;
         }
         
         while(1)
@@ -155,7 +191,7 @@ void compressAri(char *inputFile, char *outputFile)
             right += right + 1;
         }
         
-        touchCharList(&charList, BASIC_AGRESSION, c);
+        touchCharList(&charList, &tableID, BASIC_AGRESSION, c);
     }
     
     
@@ -163,7 +199,7 @@ void compressAri(char *inputFile, char *outputFile)
     bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
     writeBit(-1, &outputFilePtr);
     //fwrite(&bitsToFollow, sizeof(ariInt), 1, outputFilePtr);
-    fwrite(&(charList[257]), sizeof(uint32_t), 1, outputFilePtr);
+    fwrite(&(charList[0][257]), sizeof(uint32_t), 1, outputFilePtr);
     
     free(charList);
     fclose(inputFilePtr);
@@ -195,8 +231,15 @@ void decompressAri(char *compressedFile, char *dataFile)
     FILE *compressedFilePtr = (FILE *)fopen(compressedFile, "rb");
     FILE *dataFilePtr = (FILE *)fopen(dataFile, "wb");
     
-    uint32_t *charList = NULL;
-    touchCharList(&charList, DEFAULT, 0);
+    uint32_t **charList = calloc(5, sizeof(uint32_t*));
+    int tableID = 0;
+    {
+        for (; tableID < 5; tableID++)
+        {
+            charList[tableID] = calloc(258, sizeof(uint32_t));
+        }
+        tableID = 0;
+    }
     
     ariInt left = 0;
     ariInt right = 0xFFFFFFFF;
@@ -206,7 +249,7 @@ void decompressAri(char *compressedFile, char *dataFile)
     
     //read length of file
     fseek(compressedFilePtr, -sizeof(uint32_t), SEEK_END);
-    fread(&(charList[257]), sizeof(uint32_t), 1, compressedFilePtr);
+    fread(&(charList[0][257]), sizeof(uint32_t), 1, compressedFilePtr);
     //printf("len is %u\n", charList[257]);
     rewind(compressedFilePtr);
     
@@ -223,25 +266,22 @@ void decompressAri(char *compressedFile, char *dataFile)
         value = temp;
     }
     
+    touchCharList(&charList, &tableID, DEFAULT, 0);
+    
     int j = 0;
-    while (charList[257]--)
+    while (charList[0][257]--)
     {
-        ariInt div = charList[256];
+        ariInt div = charList[tableID][256];
         j++;
         ariInt oldLeft = left;
         ariInt oldRight = right;
         uint8_t c;
         for (c = 0; c < 256; c++) //for all possible 255 chars
         {
-            left = oldLeft + ((double)charList[c] * (oldRight - oldLeft + 1)) / div;
-            right = oldLeft + ((double)charList[c + 1] * (oldRight - oldLeft + 1)) / div - 1;
+            left = oldLeft + ((double)charList[tableID][c] * (oldRight - oldLeft + 1)) / div;
+            right = oldLeft + ((double)charList[tableID][c + 1] * (oldRight - oldLeft + 1)) / div - 1;
             if ((left <= value) && (value <= right)) break;
         }
-        
-        ariInt testLeft = oldLeft + ((double)charList[c - 1] * (oldRight - oldLeft + 1)) / div;
-        ariInt testRight = oldLeft + ((double)charList[c] * (oldRight - oldLeft + 1)) / div - 1;
-        
-        //printf("%d -- %08X : %08X < %08X < %08X - могло бы быть\n", j, c - 1, testLeft, value, testRight);
         
         while(1)
         {
@@ -273,7 +313,7 @@ void decompressAri(char *compressedFile, char *dataFile)
             
         }
         
-        touchCharList(&charList, BASIC_AGRESSION, c);
+        touchCharList(&charList, &tableID, BASIC_AGRESSION, c);
         fwrite(&c, 1, 1, dataFilePtr);
     }
     

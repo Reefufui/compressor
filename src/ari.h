@@ -17,7 +17,7 @@ typedef enum {
     DEFAULT
 } CharListTemplate;
 
-void touchCharList(uint32_t **charList, CharListTemplate type, uint8_t c);
+void touchCharList(uint32_t ***charList, int *prevTableID, CharListTemplate type, uint8_t c);
 
 void writeBit(int bit, FILE **outputFilePtr);
 
