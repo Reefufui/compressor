@@ -77,17 +77,10 @@ void touchCharList(uint32_t ***charList, int *prevTableID, CharListTemplate type
     uint64_t w2 = (*charList)[1][c + 1] - (*charList)[1][c];
     uint64_t avg = (*charList)[0][256] / 255;
     
-    if (1 && (w1 % 5 == 0))
-    {
-        printf("\t%02X (1) -> %u\t(10) -> %u\n", c, w1, w2);
-        printf("avg: %u\n", avg);
-    }
-    
-    
     const int trashHold = 20;
     static int counter = 0;
     
-    int mountGrow = w1 > (avg + 1000);
+    int mountGrow = w1 > avg;
     if (mountGrow) ++counter;
     if (!mountGrow) counter = 0;
     
@@ -195,7 +188,7 @@ void compressAri(char *inputFile, char *outputFile)
     }
     
     
-    printf("bitsToFollow = %d\n", bitsToFollow);
+    //printf("bitsToFollow = %d\n", bitsToFollow);
     bitsPlusFollow(1, &bitsToFollow, &outputFilePtr);
     writeBit(-1, &outputFilePtr);
     //fwrite(&bitsToFollow, sizeof(ariInt), 1, outputFilePtr);
